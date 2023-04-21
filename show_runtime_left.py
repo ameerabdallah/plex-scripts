@@ -80,10 +80,10 @@ if __name__ == '__main__':
 
         print(f'Runtime left: {runtime_left_duration}')
 
-        user_input = input('Do you want to select another item? [y/n]: ') 
-        while user_input not in ['y', 'n']:
+        user_input = input('Do you want to select another item? [Y/n]: ') 
+        while user_input not in ['y', 'Y', 'n', 'N', '']:
             user_input = input("Please enter 'y' or 'n': ")
 
-        if user_input == 'n':
+        if user_input == 'n' or user_input == 'N':
             break
 
