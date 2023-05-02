@@ -47,7 +47,7 @@ def get_runtime_left(show: Show) -> int | float:
         markers = cast(List[Marker], episode.markers)
         intro_and_credit_duration = 0
         for marker in markers:
-            if marker.type == 'intro' or marker.type == 'credits':
+            if marker.type in ['intro', 'credit']:
                 intro_and_credit_duration += marker.end - marker.start 
 
         total_runtime += episode.duration - intro_and_credit_duration
