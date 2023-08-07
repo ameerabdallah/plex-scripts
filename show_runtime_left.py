@@ -53,6 +53,14 @@ def get_runtime_left(show: Show) -> int | float:
         total_runtime += episode.duration - intro_and_credit_duration
     return total_runtime
 
+def isYes(input):
+    return input == 'y' or input == 'Y'
+
+def isNo(input):
+    return input == 'n' or input == 'N'
+
+valid_responses = ['y', 'Y', 'n', 'N', '']
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Get runtime left in anything in series')
     parser.add_argument('--overwrite-token', '-O', default=False, action=argparse.BooleanOptionalAction, help='Overwrite the token in the keyring')
@@ -81,9 +89,10 @@ if __name__ == '__main__':
         print(f'Runtime left: {runtime_left_duration}')
 
         user_input = input('Do you want to select another item? [Y/n]: ') 
-        while user_input not in ['y', 'Y', 'n', 'N', '']:
+        while user_input not in valid_responses:
             user_input = input("Please enter 'y' or 'n': ")
 
-        if user_input == 'n' or user_input == 'N':
+        if isNo(user_input):
             break
+
 
