@@ -13,9 +13,9 @@ from iterfzf import iterfzf
 from tqdm import tqdm
 import datetime
 
-
 PLEX_SERVICE_NAME = "plex_api"
 PLEX_SERVICE_NAME_USERNAME = "plex_api_username"
+PLEX_SERVICE_NAME_SERVERNAME = "plex_api_servername"
 
 def handle_plex_authentication(overwrite_token: bool) -> MyPlexAccount:
     credentials = None
@@ -68,7 +68,13 @@ if __name__ == '__main__':
 
     account = handle_plex_authentication(args.overwrite_token) 
     
-    plexserver = cast(PlexServer, account.resource('AbdallahNAS').connect())
+    server_name = None
+    if len(account.resources()) == 1:
+        server_name = account.resources()[0].name
+    else:
+        server_name = iterfzf([server.name for server in account.resources()], prompt='Select server: ')
+
+    plexserver = cast(PlexServer, account.resource(server_name).connect())
 
     while True:
         libraries = cast(List[LibrarySection], plexserver.library.sections())
