@@ -1,57 +1,55 @@
 #!/usr/bin/env python
 
-import argparse
-from typing import cast, List
+from typing import cast, List, Tuple
 from plexapi.media import Marker
-from plexapi.myplex import MyPlexAccount
 from plexapi.server import PlexServer
 from plexapi.library import LibrarySection, ShowSection 
 from plexapi.video import Show, Episode
-import keyring
-import getpass
 from iterfzf import iterfzf
 from tqdm import tqdm
 import datetime
+from authenticate_plex import handle_plex_authentication
+import argparse
+from concurrent.futures import ThreadPoolExecutor
 
-PLEX_SERVICE_NAME = "plex_api"
-PLEX_SERVICE_NAME_USERNAME = "plex_api_username"
-PLEX_SERVICE_NAME_SERVERNAME = "plex_api_servername"
+for includeKey in Episode._INCLUDES:
+    Episode._INCLUDES[includeKey] = 0
+Episode._INCLUDES['includeMarkers'] = 1 
 
-def handle_plex_authentication(overwrite_token: bool) -> MyPlexAccount:
-    credentials = None
-    username = None
-    if overwrite_token == False:
-        username = keyring.get_password(PLEX_SERVICE_NAME, PLEX_SERVICE_NAME_USERNAME)
-        credentials = keyring.get_credential(PLEX_SERVICE_NAME, username)
+def reload_episode(episode: Episode) -> Episode:
+    return episode.reload()
 
-    if credentials is not None:
-        token = cast(str, credentials.password)
-        return MyPlexAccount(username=username, token=token)
+def get_runtime_left(show: Show) -> Tuple[int, int]:
+
+    unwatched_episodes = cast(List[Episode], show.unwatched())
+    with ThreadPoolExecutor() as executor:
+        list(tqdm(executor.map(reload_episode, unwatched_episodes), total=len(unwatched_episodes), desc="Fetching episode markers. This may take a while."))
+
+    total_runtime_with_watched = 0
+    for episode in tqdm(show.episodes(), desc="Calculating total runtime with watched"):
+        total_runtime_with_watched += episode.duration
+
+
+    total_runtime_without_watched = 0
+
+    total_intro_and_credit_duration = 0
+    if unwatched_episodes.__len__() == 0:
+        print("All episodes are already watched for this series...")
+        print("Skipping calculation of runtime left...")
     else:
-        username = input("Username: ")
-        password = getpass.getpass(f'Password for {username}: ')
-        account = MyPlexAccount(username, password)
-        token = account.authenticationToken
-        keyring.set_password(PLEX_SERVICE_NAME, PLEX_SERVICE_NAME_USERNAME, username)
-        keyring.set_password(PLEX_SERVICE_NAME, username, token)
-        return account
+        for episode in tqdm(unwatched_episodes, desc="Calculating runtime left"): 
 
+            ## Add to the total intro and credit duration which will later be subtracted from the runtime left
+            markers = [marker for marker in episode.markers if marker.type == 'intro' or marker.type == 'credit']
+            markers = cast(List[Marker], markers)
+            for marker in markers: 
+                marker_duration = marker.end - marker.start
+                total_intro_and_credit_duration += marker_duration
 
-def get_runtime_left(show: Show) -> int | float:
-    episodes = cast(List[Episode], show.unwatched())
-    total_runtime = 0
-    for episode in tqdm(episodes, desc="Calculating runtime left"): 
+            total_runtime_without_watched += episode.duration
+        total_runtime_without_watched -= total_intro_and_credit_duration
 
-        # calculate intro and credit duration and subtract it from
-        # the total runtime since it's not part of the actual episode
-        markers = cast(List[Marker], episode.markers)
-        intro_and_credit_duration = 0
-        for marker in markers:
-            if marker.type in ['intro', 'credit']:
-                intro_and_credit_duration += marker.end - marker.start 
-
-        total_runtime += episode.duration - intro_and_credit_duration
-    return total_runtime
+    return (total_runtime_with_watched, int(total_runtime_without_watched))
 
 def isYes(input):
     return input == 'y' or input == 'Y'
@@ -62,11 +60,11 @@ def isNo(input):
 valid_responses = ['y', 'Y', 'n', 'N', '']
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Get runtime left in anything in series')
-    parser.add_argument('--overwrite-token', '-O', default=False, action=argparse.BooleanOptionalAction, help='Overwrite the token in the keyring')
-    args = parser.parse_args()
+    args = argparse.ArgumentParser(description='Calculate the runtime left of a show.')
+    args.add_argument('--overwrite-token', '-O', default=False, action='store_true', help='Overwrite the stored token in the keyring.')
+    parsed_args = args.parse_args()
 
-    account = handle_plex_authentication(args.overwrite_token) 
+    account = handle_plex_authentication(parsed_args.overwrite_token) 
     
     server_name = None
     if len(account.resources()) == 1:
@@ -90,14 +88,17 @@ if __name__ == '__main__':
         show = cast(Show, shows[show_titles.index(show_title)])
         
         runtime_left = get_runtime_left(show)
-        runtime_left_duration = datetime.timedelta(milliseconds=runtime_left)
 
-        print(f'Runtime left: {runtime_left_duration}')
+        print('\n')
+        print(f'Total runtime: {datetime.timedelta(milliseconds=runtime_left[0])}')
+        print(f'Runtime left: {datetime.timedelta(milliseconds=runtime_left[1])}')
+        print('\n')
 
         user_input = input('Do you want to select another item? [Y/n]: ') 
         while user_input not in valid_responses:
             user_input = input("Please enter 'y' or 'n': ")
 
+        print('\n')
         if isNo(user_input):
             break
 
