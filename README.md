@@ -29,7 +29,21 @@ python show_runtime_left.py
 ```bash
 python show_runtime_left.py --overwrite-token 
 # or 
-python show_runtime_left.py -o
+python show_runtime_left.py -O
+```
+
+* Calculate for entire library
+```bash
+python show_runtime_left.py --entire-library
+# or
+python show_runtime_left.py -E
+```
+
+* Skip marker calculation. This is useful since markers need to be pulled for each episode of a series 1 by 1. This is parallelized to improve performance but is still orders of magnitude slower than simply skipping the marker calculation.
+```bash
+python show_runtime_left.py --skip-markers
+# or
+python show_runtime_left.py -S
 ```
 
 ## Authentication
