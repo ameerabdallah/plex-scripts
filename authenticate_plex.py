@@ -21,7 +21,14 @@ def handle_plex_authentication(overwrite_token: bool) -> MyPlexAccount:
 
     if credentials is not None:
         token = cast(str, credentials.password)
-        return MyPlexAccount(username=username, token=token)
+
+        try:
+            plex_account = MyPlexAccount(username=username, token=token)
+        except:
+            print("Token is invalid. Please reauthenticate.")
+            plex_account = handle_plex_authentication(True)
+
+        return plex_account
     else:
         username = input("Username: ")
         password = getpass.getpass(f'Password for {username}: ')

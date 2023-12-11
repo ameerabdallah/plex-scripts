@@ -78,11 +78,44 @@ def get_movie_runtime_left(movie: Movie, skip_markers: bool = False) -> RuntimeL
 
     return (int(total_runtime_with_watched), int(total_runtime_without_watched))
 
-def print_runtime_left(runtime: int, runtime_left: int | bool = False) -> None:
+def get_library_runtime_left(library: LibrarySection, entire_library: bool, skip_markers: bool) -> RuntimeLeft:
+        resulting_runtime_left: RuntimeLeft = (0, 0)
+
+        if library.type == 'show':
+            library = cast(ShowSection, library)
+            shows = library.all()
+
+            if not entire_library:
+                # Select show
+                show_titles = [show.title for show in shows]
+                show_title = None
+                show_title = iterfzf(show_titles, prompt='Select item: ', case_sensitive=False)
+
+                show = cast(Show, shows[show_titles.index(show_title)])
+                resulting_runtime_left = get_series_runtime_left(show, skip_markers) 
+            else:
+                # Start incrementing the total runtime and runtime left
+                for show in tqdm(shows, desc="Calculating runtime left for all shows"):
+                    # we don't want to get network blocked since we are checking many shows so the max_workers is set to 2
+                    # not necessary when only checking for one show since server not likely to block us for that
+                    runtime_left = get_series_runtime_left(show, skip_markers, should_print=False, max_marker_workers=2)
+                    resulting_runtime_left = (resulting_runtime_left[0] + runtime_left[0], resulting_runtime_left[1] + runtime_left[1])
+
+        elif library.type == 'movie':
+            library = cast(MovieSection, library)
+            movies = library.all()
+
+            # Start incrementing the total runtime and runtime left
+            for movie in tqdm(movies, desc="Calculating runtime left for all movies"):
+                runtime_left = get_movie_runtime_left(movie, skip_markers)
+                resulting_runtime_left = (resulting_runtime_left[0] + runtime_left[0], resulting_runtime_left[1] + runtime_left[1])
+
+        return resulting_runtime_left
+
+def print_runtime_left(runtime_left: RuntimeLeft) -> None:
     print('\n')
-    print(f'Total runtime: {datetime.timedelta(milliseconds=runtime)}')
-    if runtime_left:
-        print(f'Runtime left: {datetime.timedelta(milliseconds=runtime_left)}')
+    print(f'Total runtime: {datetime.timedelta(milliseconds=runtime_left[0])}')
+    print(f'Runtime left: {datetime.timedelta(milliseconds=runtime_left[1])}')
     print('\n')
 
 def isYes(input):
@@ -95,9 +128,9 @@ valid_responses = ['y', 'Y', 'n', 'N', '']
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser(description='Calculate the runtime left of a show.')
-    args.add_argument('--overwrite-token', '-O', default=False, action='store_true', help='Overwrite the stored token in the keyring.')
-    args.add_argument('--entire-library', '-E', default=False, action='store_true', help='Calculate the runtime left of all shows in the library.')
-    args.add_argument('--skip-markers', '-S', default=False, action='store_true', help='Proceed without the additional calculations for markers.')
+    args.add_argument('-o', '--overwrite-token', default=False, action='store_true', help='Overwrite the stored token in the keyring.')
+    args.add_argument('-e', '--entire-library', default=False, action='store_true', help='Calculate the runtime left of all shows in the library.')
+    args.add_argument('-s', '--skip-markers', default=False, action='store_true', help='Proceed without the additional calculations for markers.')
     parsed_args = args.parse_args()
 
     overwrite_token = parsed_args.overwrite_token
@@ -128,47 +161,8 @@ if __name__ == '__main__':
         library_title = iterfzf(library_titles, prompt='Select library: ', case_sensitive=False)
         library = libraries[library_titles.index(library_title)]
 
-        if library.type == 'show':
-            library = cast(ShowSection, library)
-            shows = library.all()
-
-            total_runtime = 0
-            total_runtime_left = 0
-            if not entire_library:
-                # Select show
-                show_titles = [show.title for show in shows]
-                show_title = None
-                show_title = iterfzf(show_titles, prompt='Select item: ', case_sensitive=False)
-
-                show = cast(Show, shows[show_titles.index(show_title)])
-                runtime_left = get_series_runtime_left(show, skip_markers) 
-                total_runtime += runtime_left[0]
-                total_runtime_left += runtime_left[1]
-            else:
-                # Start incrementing the total runtime and runtime left
-                for show in tqdm(shows, desc="Calculating runtime left for all shows"):
-                    print("\n\n")
-                    # we don't want to get network blocked since we are checking many shows so the max_workers is set to 2
-                    # not necessary when only checking for one show since server not likely to block us for that
-                    runtime_left = get_series_runtime_left(show, skip_markers, max_marker_workers=2)
-                    total_runtime += runtime_left[0]
-                    total_runtime_left += runtime_left[1]
-                    clear_screen()
-            print_runtime_left(total_runtime, total_runtime_left) 
-
-        elif library.type == 'movie':
-            library = cast(MovieSection, library)
-            movies = library.all()
-            total_runtime = 0
-            total_runtime_left = 0
-
-            # Start incrementing the total runtime and runtime left
-            for movie in tqdm(movies, desc="Calculating runtime left for all movies"):
-                runtime_left = get_movie_runtime_left(movie, skip_markers)
-                total_runtime += runtime_left[0]
-                total_runtime_left += runtime_left[1]
-
-            print_runtime_left(total_runtime, total_runtime_left)
+        runtime_left = get_library_runtime_left(library, entire_library, skip_markers)
+        print_runtime_left(runtime_left)
 
         user_input = input('Do you want to select another item? [Y/n]: ') 
         while user_input not in valid_responses:
