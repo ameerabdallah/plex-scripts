@@ -64,11 +64,11 @@ def get_series_runtime_left(show: Show, skip_markers: bool = False, should_print
 def get_movie_runtime_left(movie: Movie, skip_markers: bool = False) -> RuntimeLeft:
 
     total_runtime_with_watched = movie.duration
-    total_runtime_without_watched = movie.duration
+    total_runtime_without_watched = movie.duration if movie.isPlayed else 0
 
     if not skip_markers:
         ## Add to the total intro and credit duration which will later be subtracted from the runtime left
-        markers = [marker for marker in movie.markers if marker.type == 'intro' or marker.type == 'credit']
+        markers = [marker for marker in movie.markers if marker.type == 'credit']
         markers = cast(List[Marker], markers)
         total_intro_and_credit_duration = 0
         for marker in markers: 
