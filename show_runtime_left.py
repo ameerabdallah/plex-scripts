@@ -1,16 +1,14 @@
-#!/usr/bin/env python
-
 from typing import TypeAlias, cast, List, Tuple
 from plexapi.media import Marker
-from plexapi.server import PlexServer
 from plexapi.library import LibrarySection, MovieSection, ShowSection 
 from plexapi.video import Movie, Show, Episode
 from iterfzf import iterfzf
 from tqdm import tqdm
 import datetime
-from authenticate_plex import handle_plex_authentication
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+
+from get_plex_objects import prompt_for_library, prompt_for_server
 
 for includeKey in Episode._INCLUDES:
     Episode._INCLUDES[includeKey] = 0
@@ -18,19 +16,43 @@ Episode._INCLUDES['includeMarkers'] = 1
 
 RuntimeLeft: TypeAlias = Tuple[int, int]
 
-def clear_screen() -> None:
-    print('\033[H\033[J')
+SHOW_RUNTIME_LEFT_NAME = 'show-runtime-left'
+def add_arguments(subparser: argparse._SubParsersAction):
+    argparser: argparse.ArgumentParser = subparser.add_parser(SHOW_RUNTIME_LEFT_NAME, aliases=['srtl', 'runtime-left', 'rtl'], description='Calculate the runtime left of a show.')
+    argparser.add_argument('-e', '--entire-library', default=False, action='store_true', help='Calculate the runtime left of all shows in the library.')
+    argparser.add_argument('-s', '--skip-markers', default=False, action='store_true', help='Proceed without the additional calculations for markers.')
+    return SHOW_RUNTIME_LEFT_NAME
 
-def reload_episode(episode: Episode) -> Episode:
-    return episode.reload()
+def run(account, **kwargs): 
+    entire_library = kwargs['entire_library']
+    skip_markers = kwargs['skip_markers']
+
+    plexserver = prompt_for_server(account)
+    plexserver._baseurl = "https://plex.abdallahnas.net"
+
+    while True:
+        library = prompt_for_library(plexserver)
+
+        runtime_left = get_library_runtime_left(library, entire_library, skip_markers)
+        print_runtime_left(runtime_left)
+
+        user_input = input('Do you want to select another item? [Y/n]: ').lower() 
+        valid_responses = ['y', 'n', '']
+        while user_input not in valid_responses:
+            user_input = input("Please enter 'y' or 'n': ")
+
+        print('\n')
+        if user_input == 'n':
+            break
 
 def get_series_runtime_left(show: Show, skip_markers: bool = False, should_print: bool = True, max_marker_workers: int | None = None) -> RuntimeLeft:
     unwatched_episodes = cast(List[Episode], show.unwatched())
+    reload_episode = lambda episode : episode.reload()
 
     if not skip_markers:
         with ThreadPoolExecutor(max_workers=max_marker_workers) as executor:
             if should_print:
-                 list(tqdm(executor.map(reload_episode, unwatched_episodes), total=len(unwatched_episodes), desc=f'Fetching episode markers for "{show.title}"'))
+                list(tqdm(executor.map(reload_episode, unwatched_episodes), total=len(unwatched_episodes), desc=f'Fetching episode markers for "{show.title}"'))
             else:
                  list(executor.map(reload_episode, unwatched_episodes))
 
@@ -117,59 +139,4 @@ def print_runtime_left(runtime_left: RuntimeLeft) -> None:
     print(f'Total runtime: {datetime.timedelta(milliseconds=runtime_left[0])}')
     print(f'Runtime left: {datetime.timedelta(milliseconds=runtime_left[1])}')
     print('\n')
-
-def isYes(input):
-    return input == 'y' or input == 'Y'
-
-def isNo(input):
-    return input == 'n' or input == 'N'
-
-valid_responses = ['y', 'Y', 'n', 'N', '']
-
-if __name__ == '__main__':
-    args = argparse.ArgumentParser(description='Calculate the runtime left of a show.')
-    args.add_argument('-o', '--overwrite-token', default=False, action='store_true', help='Overwrite the stored token in the keyring.')
-    args.add_argument('-e', '--entire-library', default=False, action='store_true', help='Calculate the runtime left of all shows in the library.')
-    args.add_argument('-s', '--skip-markers', default=False, action='store_true', help='Proceed without the additional calculations for markers.')
-    parsed_args = args.parse_args()
-
-    overwrite_token = parsed_args.overwrite_token
-    entire_library = parsed_args.entire_library
-    skip_markers = parsed_args.skip_markers
-
-    account = handle_plex_authentication(overwrite_token) 
-    
-    server_name = None
-    if len(account.resources()) == 1:
-        server_name = account.resources()[0].name
-    else:
-        server_names = [server.name for server in account.resources()]
-        server_name = None
-        server_name = iterfzf(server_names, prompt='Select server: ', case_sensitive=False)
-
-    plexserver = cast(PlexServer, account.resource(server_name).connect())
-
-    while True:
-        clear_screen()
-        libraries = cast(List[LibrarySection], plexserver.library.sections())
-        libraries = [library for library in libraries if library.type == 'show' or library.type == 'movie']
-
-        # Select library
-        library_titles = [library.title for library in libraries]
-        library_title = None
-        
-        library_title = iterfzf(library_titles, prompt='Select library: ', case_sensitive=False)
-        library = libraries[library_titles.index(library_title)]
-
-        runtime_left = get_library_runtime_left(library, entire_library, skip_markers)
-        print_runtime_left(runtime_left)
-
-        user_input = input('Do you want to select another item? [Y/n]: ') 
-        while user_input not in valid_responses:
-            user_input = input("Please enter 'y' or 'n': ")
-
-        print('\n')
-        if isNo(user_input):
-            break
-
 
